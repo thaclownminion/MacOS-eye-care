@@ -32,6 +32,6 @@ crashlytics-build.properties
 crashlytics.properties
 
 # Swift support mappen en bestanden
-/Users/kairozema/EyeCare/MacOS-eye-care/EyeCare.xcodeproj 
-/Users/kairozema/EyeCare/MacOS-eye-care/EyeCareTests 
-/Users/kairozema/EyeCare/MacOS-eye-care/EyeCareUITests
+EyeCareTests/
+EyeCareUITests/
+EyeCare.xcodeproj/
