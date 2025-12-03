@@ -489,7 +489,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         For sugestions and contact: https://github.com/thaclownminion/MacOS-eye-care/issues
         © \(Calendar.current.component(.year, from: Date()))
-        App version: 1.3.4
+        App version: 1.3.0
         """
         alert.alertStyle = .informational
         alert.addButton(withTitle: "OK")
