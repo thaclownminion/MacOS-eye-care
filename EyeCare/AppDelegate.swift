@@ -7,8 +7,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
     var timerManager: TimerManager!
     var breakWindow: BreakOverlayWindow?
-    var sleepWindow: SleepBlockWindow?
     var settingsWindow: NSWindow?
+    
+    // ADD: Menu update timer
+    private var menuUpdateTimer: Timer?
+    
+    override init() {
+        super.init()
+    }
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Request notification permissions
@@ -32,10 +38,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         timerManager.onBreakStart = { [weak self] in
             DispatchQueue.main.async {
                 self?.showBreakOverlay()
-                print("showBreakOverlay actief")
+                print("showBreakOverlay active")
             }
         }
-        print("showBreakOverlay is nu weg")
         timerManager.onBreakEnd = { [weak self] in
             print("🔴🔴🔴 onBreakEnd CALLBACK TRIGGERED in AppDelegate")
             DispatchQueue.main.async {
@@ -44,21 +49,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 print("🔴 hideBreakOverlay completed")
             }
         }
-        timerManager.onSleepModeChange = { [weak self] isActive in
-            DispatchQueue.main.async {
-                if isActive {
-                    self?.showSleepBlock()
-                } else {
-                    self?.hideSleepBlock()
-                }
-            }
-        }
-        timerManager.onBreakWarning = { [weak self] minutesRemaining in
-            DispatchQueue.main.async {
-                self?.showInAppWarning(minutesRemaining: minutesRemaining)
-            }
-        }
-        
         timerManager.onBreakWarning = { [weak self] minutesRemaining in
             DispatchQueue.main.async {
                 self?.showInAppWarning(minutesRemaining: minutesRemaining)
@@ -69,11 +59,75 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.updateInAppWarning(secondsRemaining: secondsRemaining)
             }
         }
+        timerManager.onTimerStateChange = { [weak self] in
+            DispatchQueue.main.async {
+                self?.handleTimerStateChange()
+            }
+        }
+        
         // Create menu
         setupMenu()
         
+        // ADD: Start menu update timer
+        startMenuUpdateTimer()
+        
         // Start timer
         timerManager.start()
+        
+        // ADD: Setup Command+Q override
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            return self?.handleKeyDown(event: event) ?? event
+        }
+    }
+    
+    // ADD: Handle Command+Q
+    private func handleKeyDown(event: NSEvent) -> NSEvent? {
+        // Check if Command+Q is pressed
+        if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "q" {
+            // If break window is showing, don't quit
+            if breakWindow != nil {
+                print("🚫 Command+Q blocked during break")
+                return nil // Block the event
+            }
+            
+            // Otherwise, trigger the quit confirmation
+            quitApp()
+            return nil // Block the default quit
+        }
+        return event
+    }
+    
+    // ADD: Menu update timer
+    private func startMenuUpdateTimer() {
+        menuUpdateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.updateMenuTimes()
+        }
+    }
+    
+    // ADD: Update menu times
+    private func updateMenuTimes() {
+        guard let menu = statusItem.menu else { return }
+        
+        // Update work timer item
+        if let timeLeftItem = menu.items.first {
+            let remaining = timerManager.getRemainingWorkTime()
+            let minutes = Int(remaining) / 60
+            let seconds = Int(remaining) % 60
+            timeLeftItem.title = String(format: "Next break in: %d:%02d", minutes, seconds)
+        }
+        
+        // Update focus item
+        if menu.items.count > 1 {
+            let focusItem = menu.items[1]
+            let remaining = timerManager.getRemainingFocusTime()
+            if remaining > 0 {
+                let minutes = Int(remaining) / 60
+                let seconds = Int(remaining) % 60
+                focusItem.title = String(format: "Focus Mode: %d:%02d left", minutes, seconds)
+            } else {
+                focusItem.title = "Focus Mode: Off"
+            }
+        }
     }
     
     func setupMenu() {
@@ -86,10 +140,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let focusItem = NSMenuItem(title: "Focus Mode: Off", action: nil, keyEquivalent: "")
         focusItem.isEnabled = false
         menu.addItem(focusItem)
-        
-        let sleepItem = NSMenuItem(title: "Sleep Mode: Off", action: nil, keyEquivalent: "")
-        sleepItem.isEnabled = false
-        menu.addItem(sleepItem)
         
         timerManager.onTimeUpdate = { [weak timeLeftItem] remaining in
             DispatchQueue.main.async {
@@ -107,16 +157,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     focusItem?.title = String(format: "Focus Mode: %d:%02d left", minutes, seconds)
                 } else {
                     focusItem?.title = "Focus Mode: Off"
-                }
-            }
-        }
-        
-        timerManager.onSleepModeChange = { [weak sleepItem] isActive in
-            DispatchQueue.main.async {
-                if isActive {
-                    sleepItem?.title = "Sleep Mode: Active 😴"
-                } else {
-                    sleepItem?.title = "Sleep Mode: Off"
                 }
             }
         }
@@ -165,16 +205,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     @objc func openSettings() {
-        if timerManager.isCurrentlyInSleepTime() {
-            showSleepModeAlert()
-            return
-        }
-        
-        if timerManager.isSettingsLocked() {
-            showLockedAlert()
-            return
-        }
-        
         if settingsWindow == nil {
             let settingsView = SettingsView(timerManager: timerManager, appDelegate: self)
             let hostingController = NSHostingController(rootView: settingsView)
@@ -182,23 +212,37 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             settingsWindow = NSWindow(contentViewController: hostingController)
             settingsWindow?.title = "Eye Care Settings"
             settingsWindow?.styleMask = [.titled, .closable, .resizable]
-            settingsWindow?.setContentSize(NSSize(width: 400, height: 800))
+            settingsWindow?.setContentSize(NSSize(width: 400, height: 700))
             settingsWindow?.center()
             
-            // Reset settings window when closed
+            // Apply theme to window
+            applyThemeToWindow(settingsWindow)
+            
             settingsWindow?.delegate = self
         }
+        
+        // Reapply theme in case it changed
+        applyThemeToWindow(settingsWindow)
         
         settingsWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
     
-    @objc func toggleFocusMode() {
-        if timerManager.isCurrentlyInSleepTime() {
-            showSleepModeAlert()
-            return
-        }
+    // ADD: Apply theme to window
+    private func applyThemeToWindow(_ window: NSWindow?) {
+        guard let window = window else { return }
         
+        switch timerManager.currentTheme {
+        case .system:
+            window.appearance = nil // Use system appearance
+        case .light:
+            window.appearance = NSAppearance(named: .aqua)
+        case .dark:
+            window.appearance = NSAppearance(named: .darkAqua)
+        }
+    }
+    
+    @objc func toggleFocusMode() {
         if timerManager.isFocusModeActive {
             timerManager.endFocusMode()
         } else {
@@ -207,11 +251,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     @objc func takeBreakNow() {
-        if timerManager.isCurrentlyInSleepTime() {
-            showSleepModeAlert()
-            return
-        }
-        
         timerManager.triggerBreakNow()
     }
     
@@ -277,32 +316,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         alert.runModal()
     }
     
-    func showSleepModeAlert() {
-        let alert = NSAlert()
-        alert.messageText = "Sleep Mode Active"
-        alert.informativeText = "This feature is blocked during your sleep time. Please wait until your sleep time ends."
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
-    }
-    
     @objc func quitApp() {
-        if UserDefaults.standard.bool(forKey: "preventQuit") {
-            let alert = NSAlert()
-            alert.messageText = "Are you sure you want to quit?"
-            alert.informativeText = "Eye Care helps protect your eyes. Quitting will disable break reminders."
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "Cancel")
-            alert.addButton(withTitle: "Quit Anyway")
-            
-            let response = alert.runModal()
-            
-            if response == .alertSecondButtonReturn {
-                NSApplication.shared.terminate(nil)
-            }
-            return
+        // CHANGE: Always show confirmation dialog
+        let alert = NSAlert()
+        alert.messageText = "Are you sure you want to quit?"
+        alert.informativeText = "Eye Care helps protect your eyes. Quitting will disable break reminders."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Quit Anyway")
+        
+        let response = alert.runModal()
+        
+        if response == .alertSecondButtonReturn {
+            NSApplication.shared.terminate(nil)
         }
-        NSApplication.shared.terminate(nil)
     }
     
     func showBreakOverlay() {
@@ -348,40 +375,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         print("✅ hideBreakOverlay completed - window MUST be gone")
     }
-    
-    func showSleepBlock() {
-        print("🌙 showSleepBlock() - Creating sleep block window")
-        if sleepWindow == nil {
-            sleepWindow = SleepBlockWindow(timerManager: timerManager)
-        }
-        sleepWindow?.show()
-        print("🌙 Sleep block window is now active")
-    }
-
-    func hideSleepBlock() {
-        print("☀️ hideSleepBlock() - Removing sleep block window")
-        if let window = sleepWindow {
-            window.forceClose()
-            sleepWindow = nil
-        }
-        print("☀️ Sleep block window removed")
-    }
 
     private var warningWindow: NSWindow?
     private var warningHostingController: NSHostingController<InAppWarningView>?
 
     func showInAppWarning(minutesRemaining: Int) {
-        // Close existing warning
         warningWindow?.close()
         
-        // Create warning view
-        let warningView = InAppWarningView(minutesRemaining: minutesRemaining, secondsRemaining: nil)
+        let warningView = InAppWarningView(
+            minutesRemaining: minutesRemaining,
+            secondsRemaining: nil
+        )
         let hostingController = NSHostingController(rootView: warningView)
         warningHostingController = hostingController
         
-        // Create window
         let window = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 320, height: 100),
+            contentRect: NSRect(x: 0, y: 0, width: 340, height: 90),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -393,7 +402,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.hasShadow = true
         window.contentView = hostingController.view
         
-        // Position at top-right of screen
         if let screen = NSScreen.main {
             let screenFrame = screen.visibleFrame
             let windowFrame = window.frame
@@ -405,7 +413,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.orderFrontRegardless()
         warningWindow = window
         
-        // Don't auto-dismiss if it's the 1-minute warning (countdown will show)
         if minutesRemaining != 1 {
             DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
                 self?.warningWindow?.close()
@@ -416,17 +423,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func updateInAppWarning(secondsRemaining: Int) {
-        // Only show countdown for the last 60 seconds
         guard secondsRemaining <= 60 else { return }
         
-        // If no window exists, create one
         if warningWindow == nil {
-            let warningView = InAppWarningView(minutesRemaining: nil, secondsRemaining: secondsRemaining)
+            let warningView = InAppWarningView(
+                minutesRemaining: nil,
+                secondsRemaining: secondsRemaining
+            )
             let hostingController = NSHostingController(rootView: warningView)
             warningHostingController = hostingController
             
             let window = NSPanel(
-                contentRect: NSRect(x: 0, y: 0, width: 320, height: 100),
+                contentRect: NSRect(x: 0, y: 0, width: 340, height: 90),
                 styleMask: [.borderless, .nonactivatingPanel],
                 backing: .buffered,
                 defer: false
@@ -449,12 +457,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             window.orderFrontRegardless()
             warningWindow = window
         } else {
-            // Update existing window
-            let warningView = InAppWarningView(minutesRemaining: nil, secondsRemaining: secondsRemaining)
+            let warningView = InAppWarningView(
+                minutesRemaining: nil,
+                secondsRemaining: secondsRemaining
+            )
             warningHostingController?.rootView = warningView
         }
         
-        // Close when countdown reaches 0
         if secondsRemaining == 0 {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 self?.warningWindow?.close()
@@ -464,17 +473,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
-    func showLockedAlert() {
-        let remainingTime = timerManager.getRemainingLockTime()
-        let minutes = Int(remainingTime) / 60
-        let seconds = Int(remainingTime) % 60
-        
-        let alert = NSAlert()
-        alert.messageText = "Settings Locked"
-        alert.informativeText = String(format: "Settings are locked for %d:%02d more.", minutes, seconds)
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+    func handleTimerStateChange() {
+        // Hide popup when timer is paused/modified
+        warningWindow?.close()
+        warningWindow = nil
+        warningHostingController = nil
     }
     
     @objc func showCredits() {
@@ -487,16 +490,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         If you have any good ideas for new features or an app, please contact me, I like to make apps and I would love to help you!
         
-        For sugestions and contact: https://github.com/thaclownminion/MacOS-eye-care/issues
         © \(Calendar.current.component(.year, from: Date()))
-        App version: 1.3.0
+        App version: 2.1.2
         """
         alert.alertStyle = .informational
         alert.addButton(withTitle: "OK")
-        alert.runModal()
+        alert.addButton(withTitle: "Open GitHub")
+        
+        let response = alert.runModal()
+        
+        if response == .alertSecondButtonReturn {
+            if let url = URL(string: "https://github.com/thaclownminion/MacOS-eye-care") {
+                NSWorkspace.shared.open(url)
+            }
+        }
     }
-
-    
 }
 
 extension AppDelegate: NSWindowDelegate {

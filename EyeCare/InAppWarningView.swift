@@ -9,7 +9,7 @@ struct InAppWarningView: View {
         HStack(spacing: 12) {
             Image(systemName: showingCountdown ? "timer" : "eye.fill")
                 .font(.system(size: 24))
-                .foregroundColor(showingCountdown ? .orange : .blue)
+                .foregroundColor(showingCountdown ? .orange : .cyan)
             
             VStack(alignment: .leading, spacing: 4) {
                 Text(titleText)
@@ -39,7 +39,7 @@ struct InAppWarningView: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(showingCountdown ? Color.orange.opacity(0.5) : Color.blue.opacity(0.3), lineWidth: 2)
+                .stroke(showingCountdown ? Color.orange.opacity(0.5) : Color.cyan.opacity(0.3), lineWidth: 2)
         )
         .opacity(opacity)
         .onAppear {

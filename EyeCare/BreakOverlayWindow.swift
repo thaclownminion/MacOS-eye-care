@@ -15,7 +15,7 @@ class BreakOverlayWindow: NSWindow {
         )
         
         self.level = .screenSaver
-        self.backgroundColor = NSColor.black.withAlphaComponent(0.95)
+        self.backgroundColor = NSColor.clear
         self.isOpaque = false
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         
@@ -29,7 +29,6 @@ class BreakOverlayWindow: NSWindow {
     func show() {
         print("🟢 BreakOverlayWindow.show() called")
         
-        // Create cover windows for all other screens
         for screen in NSScreen.screens where screen != NSScreen.main {
             let coverWindow = NSWindow(
                 contentRect: screen.frame,
@@ -38,8 +37,8 @@ class BreakOverlayWindow: NSWindow {
                 defer: false
             )
             coverWindow.level = .screenSaver
-            coverWindow.backgroundColor = NSColor.black.withAlphaComponent(0.95)
-            coverWindow.isOpaque = false
+            coverWindow.backgroundColor = NSColor.black
+            coverWindow.isOpaque = true
             coverWindow.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             coverWindow.ignoresMouseEvents = false
             coverWindow.isReleasedWhenClosed = false
@@ -47,7 +46,6 @@ class BreakOverlayWindow: NSWindow {
             coverWindows.append(coverWindow)
         }
         
-        // Show all windows
         self.orderFrontRegardless()
         for window in coverWindows {
             window.orderFrontRegardless()
@@ -60,10 +58,8 @@ class BreakOverlayWindow: NSWindow {
     func forceClose() {
         print("🔴 forceClose() - NUCLEAR OPTION")
         
-        // Destroy content first
         self.contentView = nil
         
-        // Force all cover windows out
         for window in coverWindows {
             window.contentView = nil
             window.orderOut(nil)
@@ -71,19 +67,15 @@ class BreakOverlayWindow: NSWindow {
         }
         coverWindows.removeAll()
         
-        // Force this window to back
         self.orderOut(nil)
         self.orderBack(nil)
         
-        // Make it invisible
         self.alphaValue = 0
         self.isOpaque = true
         self.backgroundColor = .clear
         
-        // Drop to bottom level
         self.level = .normal
         
-        // Actually close
         super.close()
         
         print("🔴 forceClose() completed")
@@ -109,7 +101,8 @@ struct BreakOverlayView: View {
     
     var body: some View {
         ZStack {
-            Color.black.opacity(0.95)
+            // ALWAYS DARK background
+            Color.black
                 .ignoresSafeArea()
             
             VStack(spacing: 30) {
@@ -123,34 +116,29 @@ struct BreakOverlayView: View {
                         value: pulseScale
                     )
                 
-                Text("Time for a break!")
+                Text(timerManager.breakMessage)
                     .font(.system(size: 48, weight: .bold))
                     .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 40)
                 
                 Text("Look away from your screen")
                     .font(.system(size: 24))
-                    .foregroundColor(.white.opacity(0.8))
+                    .foregroundColor(.white.opacity(0.7))
                 
                 Spacer()
                     .frame(height: 40)
                 
                 ZStack {
-                    // Background circle
                     Circle()
                         .stroke(Color.white.opacity(0.2), lineWidth: 12)
                         .frame(width: 200, height: 200)
                     
-                    // Animated progress circle with gradient
                     Circle()
                         .trim(from: 0, to: progress)
                         .stroke(
                             AngularGradient(
-                                gradient: Gradient(colors: [
-                                    .blue,
-                                    .cyan,
-                                    .blue.opacity(0.8),
-                                    .cyan.opacity(0.8)
-                                ]),
+                                gradient: Gradient(colors: gradientColors),
                                 center: .center,
                                 startAngle: .degrees(0),
                                 endAngle: .degrees(353)
@@ -161,7 +149,6 @@ struct BreakOverlayView: View {
                         .rotationEffect(.degrees(-90))
                         .animation(.linear(duration: 0.1), value: progress)
                     
-                    // Glow effect when almost done
                     if remainingTime <= 5 {
                         Circle()
                             .trim(from: 0, to: progress)
@@ -175,14 +162,12 @@ struct BreakOverlayView: View {
                             .animation(.linear(duration: 0.1), value: progress)
                     }
                     
-                    // Timer text with smooth number transition
                     Text("\(Int(ceil(max(0, remainingTime))))")
                         .font(.system(size: 60, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
                         .contentTransition(.numericText())
                         .animation(.easeInOut(duration: 0.3), value: Int(remainingTime))
                 }
-        
             }
             .padding()
         }
@@ -190,7 +175,6 @@ struct BreakOverlayView: View {
             let newTime = timerManager.getRemainingBreakTime()
             remainingTime = newTime
             
-            // Update progress smoothly
             let totalDuration = timerManager.breakDuration
             if totalDuration > 0 {
                 progress = CGFloat(newTime / totalDuration)
@@ -205,10 +189,14 @@ struct BreakOverlayView: View {
                 progress = CGFloat(remainingTime / totalDuration)
             }
             
-            // Start pulse animation
             pulseScale = 1.05
             
             print("🟢 BreakOverlayView appeared with time: \(remainingTime)")
         }
+    }
+    
+    var gradientColors: [Color] {
+        // Always use cyan for dark mode
+        return [.cyan, .cyan.opacity(0.7), .cyan, .cyan.opacity(0.8)]
     }
 }

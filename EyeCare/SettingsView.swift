@@ -6,8 +6,9 @@ struct SettingsView: View {
     
     @State private var workMinutes: Double
     @State private var breakSeconds: Double
-    @State private var lockMinutes: Double
     @State private var focusMinutes: Double
+    @State private var breakMessage: String
+    @State private var selectedTheme: AppTheme
     @State private var preventQuit: Bool = UserDefaults.standard.bool(forKey: "preventQuit")
     @State private var launchAtLogin: Bool = UserDefaults.standard.bool(forKey: "launchAtLogin")
     
@@ -16,11 +17,6 @@ struct SettingsView: View {
     @State private var notification5min: Bool
     @State private var notification2min: Bool
     @State private var notification1min: Bool
-    @State private var sleepModeEnabled: Bool
-    @State private var sleepStartHour: Int
-    @State private var sleepStartMinute: Int
-    @State private var sleepEndHour: Int
-    @State private var sleepEndMinute: Int
     
     @State private var scheduleEnabled: Bool
     @State private var mondayEnabled: Bool
@@ -31,19 +27,16 @@ struct SettingsView: View {
     @State private var saturdayEnabled: Bool
     @State private var sundayEnabled: Bool
     
+    let defaultBreakMessage = "Time for a break!"
+    
     init(timerManager: TimerManager, appDelegate: AppDelegate?) {
         self.timerManager = timerManager
         self.appDelegate = appDelegate
         _workMinutes = State(initialValue: timerManager.workInterval / 60)
         _breakSeconds = State(initialValue: timerManager.breakDuration)
-        _lockMinutes = State(initialValue: timerManager.settingsLockDuration / 60)
         _focusMinutes = State(initialValue: timerManager.focusDuration / 60)
-        
-        _sleepModeEnabled = State(initialValue: timerManager.sleepModeEnabled)
-        _sleepStartHour = State(initialValue: timerManager.sleepStartHour)
-        _sleepStartMinute = State(initialValue: timerManager.sleepStartMinute)
-        _sleepEndHour = State(initialValue: timerManager.sleepEndHour)
-        _sleepEndMinute = State(initialValue: timerManager.sleepEndMinute)
+        _breakMessage = State(initialValue: timerManager.breakMessage)
+        _selectedTheme = State(initialValue: timerManager.currentTheme)
         
         _scheduleEnabled = State(initialValue: timerManager.scheduleEnabled)
         _mondayEnabled = State(initialValue: timerManager.mondayEnabled)
@@ -78,6 +71,56 @@ struct SettingsView: View {
                 Divider()
                 
                 VStack(alignment: .leading, spacing: 20) {
+                    // Theme Selection
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Appearance Theme")
+                            .font(.headline)
+                        
+                        Picker("Theme", selection: $selectedTheme) {
+                            ForEach(AppTheme.allCases, id: \.self) { theme in
+                                Text(theme.rawValue).tag(theme)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .onChange(of: selectedTheme) { oldValue, newValue in
+                            // Apply theme immediately
+                            applyThemeImmediately(newValue)
+                        }
+                        
+                        Text("Changes the appearance of the settings window only")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Divider()
+                    
+                    // Break Message
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Break Message")
+                            .font(.headline)
+                        
+                        TextField("Enter custom message", text: $breakMessage)
+                            .textFieldStyle(.roundedBorder)
+                        
+                        Button(action: resetToDefaultMessage) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.counterclockwise")
+                                    .font(.system(size: 11))
+                                Text("Reset to default")
+                                    .font(.system(size: 12))
+                            }
+                            .foregroundColor(.blue)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 2)
+                        
+                        Text("This message appears during breaks")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Divider()
+                    
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Work Interval")
                             .font(.headline)
@@ -101,17 +144,6 @@ struct SettingsView: View {
                             .foregroundColor(.secondary)
                         Slider(value: $focusMinutes, in: 15...180, step: 5)
                         Text("No breaks during focus mode")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Settings Lock Time")
-                            .font(.headline)
-                        Text("\(Int(lockMinutes)) minutes")
-                            .foregroundColor(.secondary)
-                        Slider(value: $lockMinutes, in: 0...60, step: 1)
-                        Text("Settings will lock after saving changes")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -154,6 +186,8 @@ struct SettingsView: View {
                             .padding(.leading, 10)
                         }
                     }
+                    
+                    Divider()
                     
                     // Weekly Schedule
                     VStack(alignment: .leading, spacing: 15) {
@@ -209,81 +243,6 @@ struct SettingsView: View {
                     
                     Divider()
                     
-                    // Sleep Mode Settings
-                    VStack(alignment: .leading, spacing: 15) {
-                        Toggle("Enable Sleep Mode", isOn: $sleepModeEnabled)
-                            .font(.headline)
-                        
-                        if sleepModeEnabled {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text("Sleep Start Time")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                                
-                                HStack {
-                                    Picker("Hour", selection: $sleepStartHour) {
-                                        ForEach(0..<24) { hour in
-                                            Text(String(format: "%02d", hour)).tag(hour)
-                                        }
-                                    }
-                                    .frame(width: 80)
-                                    
-                                    Text(":")
-                                    
-                                    Picker("Minute", selection: $sleepStartMinute) {
-                                        ForEach(0..<60) { minute in
-                                            Text(String(format: "%02d", minute)).tag(minute)
-                                        }
-                                    }
-                                    .frame(width: 80)
-                                    
-                                    Spacer()
-                                }
-                                
-                                Text("Sleep End Time")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                                    .padding(.top, 5)
-                                
-                                HStack {
-                                    Picker("Hour", selection: $sleepEndHour) {
-                                        ForEach(0..<24) { hour in
-                                            Text(String(format: "%02d", hour)).tag(hour)
-                                        }
-                                    }
-                                    .frame(width: 80)
-                                    
-                                    Text(":")
-                                    
-                                    Picker("Minute", selection: $sleepEndMinute) {
-                                        ForEach(0..<60) { minute in
-                                            Text(String(format: "%02d", minute)).tag(minute)
-                                        }
-                                    }
-                                    .frame(width: 80)
-                                    
-                                    Spacer()
-                                }
-                                
-                                HStack {
-                                    Image(systemName: "moon.stars.fill")
-                                        .foregroundColor(.yellow)
-                                    Text("Computer will be fully blocked during sleep time")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                                .padding(.top, 5)
-                                
-                                Text("The sleep block screen will remain until wake time")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            .padding(.leading, 10)
-                        }
-                    }
-                    
-                    Divider()
-                    
                     Toggle("Launch at Login", isOn: $launchAtLogin)
                         .onChange(of: launchAtLogin) { oldValue, newValue in
                             if newValue {
@@ -299,7 +258,7 @@ struct SettingsView: View {
                     
                     Divider()
                     
-                    Toggle("Prevent quitting the app", isOn: $preventQuit)
+                    Toggle("confirm before quitting the app", isOn: $preventQuit)
                         .onChange(of: preventQuit) { oldValue, newValue in
                             UserDefaults.standard.set(newValue, forKey: "preventQuit")
                             timerManager.onSettingsChange?()
@@ -313,48 +272,47 @@ struct SettingsView: View {
                 
                 Button(action: saveSettings) {
                     Text("Save Settings")
-                                            .fontWeight(.semibold)
-                                            .frame(maxWidth: .infinity)
-                                            .padding()
-                                            .background(Color.blue)
-                                            .foregroundColor(.white)
-                                            .cornerRadius(10)
-                                    }
-                                    .buttonStyle(.plain)
-                                    .padding(.horizontal, 30)
-                                    .padding(.bottom, 20)
-                                }
-                            }
-                            .frame(width: 400, height: 800)
-                            .background(Color(NSColor.windowBackgroundColor))
-                        }
-                        
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue)
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 30)
+                .padding(.bottom, 20)
+            }
+        }
+        .frame(width: 400, height: 700)
+    }
+    
+    func resetToDefaultMessage() {
+        breakMessage = defaultBreakMessage
+    }
+    
+    // ADD: Apply theme immediately without saving
+    func applyThemeImmediately(_ theme: AppTheme) {
+        // Update timer manager theme
+        timerManager.currentTheme = theme
+        
+        // Apply to settings window
+        if let window = NSApp.windows.first(where: { $0.title == "Eye Care Settings" }) {
+            switch theme {
+            case .system:
+                window.appearance = nil
+            case .light:
+                window.appearance = NSAppearance(named: .aqua)
+            case .dark:
+                window.appearance = NSAppearance(named: .darkAqua)
+            }
+        }
+    }
+    
     func saveSettings() {
         print("💾 Saving settings...")
-        print("💾 Lock time set to: \(Int(lockMinutes)) minutes")
         
         let manager = timerManager
-        
-        manager.updateSettings(
-            work: workMinutes * 60,
-            breakTime: breakSeconds,
-            lockTime: lockMinutes * 60,
-            focusTime: focusMinutes * 60
-        )
-        
-        manager.updateSleepSettings(
-            enabled: sleepModeEnabled,
-            startHour: sleepStartHour,
-            startMinute: sleepStartMinute,
-            endHour: sleepEndHour,
-            endMinute: sleepEndMinute
-        )
-        
-        manager.updateScheduleSettings()
-        
-        // Save notification settings
-        manager.notificationsEnabled = notificationsEnabled
-        manager.useSystemNotifications = useSystemNotifications
         
         var timings: [Int] = []
         if notification5min { timings.append(5) }
@@ -362,29 +320,28 @@ struct SettingsView: View {
         if notification1min { timings.append(1) }
         manager.notificationTiming = timings.sorted(by: >)
         
-        manager.saveSettings()
+        manager.notificationsEnabled = notificationsEnabled
+        manager.useSystemNotifications = useSystemNotifications
         
-        // Force immediate sleep mode check
-        print("🔍 Checking if currently in sleep time...")
-        manager.forceSleepCheck()
+        manager.updateSettings(
+            work: workMinutes * 60,
+            breakTime: breakSeconds,
+            focusTime: focusMinutes * 60,
+            message: breakMessage,
+            theme: selectedTheme
+        )
         
-        // Show confirmation if settings are locked
-        if lockMinutes > 0 {
-            let alert = NSAlert()
-            alert.messageText = "Settings Saved & Locked 🔒"
-            alert.informativeText = String(format: "Your settings have been saved and are now locked for %d minutes to help maintain your eye care routine.", Int(lockMinutes))
-            alert.alertStyle = .informational
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
-        }
+        manager.updateScheduleSettings()
         
-        // Show sleep mode warning if entering sleep mode
-        if manager.isCurrentlyInSleepTime() {
-            print("⚠️ User is in sleep time - screen will be blocked!")
-        }
+        let alert = NSAlert()
+        alert.messageText = "Settings Saved ✅"
+        alert.informativeText = "Your settings have been saved successfully."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
         
         if let window = NSApp.windows.first(where: { $0.title == "Eye Care Settings" }) {
             window.close()
         }
     }
-                    }
+}
