@@ -9,8 +9,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var breakWindow: BreakOverlayWindow?
     var settingsWindow: NSWindow?
     
-    // ADD: Menu update timer
     private var menuUpdateTimer: Timer?
+    
+    // Quit protection
+    private var quitTimer: Timer?
+    private var quitCountdown: Int = 0
+    private var quitWindow: NSWindow?
     
     override init() {
         super.init()
@@ -30,7 +34,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         
         if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "eye.fill", accessibilityDescription: "Eye Care")
+            button.image = NSImage(systemSymbolName: "eye.fill", accessibilityDescription: "lookaway")
         }
         
         // Initialize timer manager
@@ -68,43 +72,46 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Create menu
         setupMenu()
         
-        // ADD: Start menu update timer
+        // Start menu update timer
         startMenuUpdateTimer()
         
         // Start timer
         timerManager.start()
         
-        // ADD: Setup Command+Q override
+        // Setup Command+Q override
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             return self?.handleKeyDown(event: event) ?? event
         }
     }
     
-    // ADD: Handle Command+Q
+    // Handle Command+Q
     private func handleKeyDown(event: NSEvent) -> NSEvent? {
         // Check if Command+Q is pressed
         if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "q" {
-            // If break window is showing, don't quit
-            if breakWindow != nil {
-                print("🚫 Command+Q blocked during break")
-                return nil // Block the event
-            }
+            // Block Command+Q completely - can only quit from settings
+            print("🚫 Command+Q blocked - use settings to quit")
             
-            // Otherwise, trigger the quit confirmation
-            quitApp()
-            return nil // Block the default quit
+            // Show a brief notification
+            let alert = NSAlert()
+            alert.messageText = "Quit Disabled"
+            alert.informativeText = "To quit lookaway, please use the Quit option in Settings."
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            
+            return nil // Block the event
         }
         return event
     }
     
-    // ADD: Menu update timer
+    // Menu update timer
     private func startMenuUpdateTimer() {
         menuUpdateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.updateMenuTimes()
         }
     }
     
-    // ADD: Update menu times
+    // Update menu times
     private func updateMenuTimes() {
         guard let menu = statusItem.menu else { return }
         
@@ -180,19 +187,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         launchAtLoginItem.state = isLaunchAtLoginEnabled() ? .on : .off
         menu.addItem(launchAtLoginItem)
         
-        menu.addItem(NSMenuItem.separator())
-        
-        let quitItem = NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q")
-        menu.addItem(quitItem)
-
-        
         statusItem.menu = menu
         
         // Update menu items based on settings
-        timerManager.onSettingsChange = { [weak quitItem, weak focusToggleItem, weak self] in
+        timerManager.onSettingsChange = { [weak focusToggleItem, weak self] in
             DispatchQueue.main.async {
-                quitItem?.isEnabled = !UserDefaults.standard.bool(forKey: "preventQuit")
-                
                 if let manager = self?.timerManager {
                     if manager.isFocusModeActive {
                         focusToggleItem?.title = "Disable Focus Mode"
@@ -210,9 +209,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let hostingController = NSHostingController(rootView: settingsView)
             
             settingsWindow = NSWindow(contentViewController: hostingController)
-            settingsWindow?.title = "Eye Care Settings"
+            settingsWindow?.title = "lookaway Settings"
             settingsWindow?.styleMask = [.titled, .closable, .resizable]
-            settingsWindow?.setContentSize(NSSize(width: 400, height: 700))
+            settingsWindow?.setContentSize(NSSize(width: 450, height: 750))
             settingsWindow?.center()
             
             // Apply theme to window
@@ -221,20 +220,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             settingsWindow?.delegate = self
         }
         
-        // Reapply theme in case it changed
-        applyThemeToWindow(settingsWindow)
-        
         settingsWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
     
-    // ADD: Apply theme to window
-    private func applyThemeToWindow(_ window: NSWindow?) {
+    func applyThemeToWindow(_ window: NSWindow?) {
         guard let window = window else { return }
         
         switch timerManager.currentTheme {
         case .system:
-            window.appearance = nil // Use system appearance
+            window.appearance = nil
         case .light:
             window.appearance = NSAppearance(named: .aqua)
         case .dark:
@@ -246,6 +241,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if timerManager.isFocusModeActive {
             timerManager.endFocusMode()
         } else {
+            // Check cooldown
+            let focusCooldownEnabled = UserDefaults.standard.bool(forKey: "focusCooldownEnabled")
+            if focusCooldownEnabled {
+                let lastFocusEnd = UserDefaults.standard.double(forKey: "lastFocusModeEnd")
+                let cooldownMinutes = UserDefaults.standard.double(forKey: "focusCooldownMinutes")
+                let cooldownSeconds = cooldownMinutes * 60
+                
+                if lastFocusEnd > 0 {
+                    let timeSinceLastFocus = Date().timeIntervalSince1970 - lastFocusEnd
+                    if timeSinceLastFocus < cooldownSeconds {
+                        let remainingCooldown = cooldownSeconds - timeSinceLastFocus
+                        let minutes = Int(remainingCooldown) / 60
+                        let seconds = Int(remainingCooldown) % 60
+                        
+                        let alert = NSAlert()
+                        alert.messageText = "Focus Mode Cooldown"
+                        alert.informativeText = "Please wait \(minutes):\(String(format: "%02d", seconds)) before enabling Focus Mode again."
+                        alert.alertStyle = .informational
+                        alert.addButton(withTitle: "OK")
+                        alert.runModal()
+                        return
+                    }
+                }
+            }
+            
             timerManager.startFocusMode()
         }
     }
@@ -254,31 +274,35 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         timerManager.triggerBreakNow()
     }
     
-    @objc func toggleLaunchAtLogin(_ sender: NSMenuItem) {
-        if isLaunchAtLoginEnabled() {
-            disableLaunchAtLogin()
-            sender.state = .off
+    func isLaunchAtLoginEnabled() -> Bool {
+        if #available(macOS 13.0, *) {
+            return SMAppService.mainApp.status == .enabled
         } else {
-            enableLaunchAtLogin()
-            sender.state = .on
+            return UserDefaults.standard.bool(forKey: "launchAtLogin")
         }
     }
     
-    func isLaunchAtLoginEnabled() -> Bool {
-        return UserDefaults.standard.bool(forKey: "launchAtLogin")
+    @objc func toggleLaunchAtLogin() {
+        if isLaunchAtLoginEnabled() {
+            disableLaunchAtLogin()
+        } else {
+            enableLaunchAtLogin()
+        }
     }
     
     func enableLaunchAtLogin() {
         if #available(macOS 13.0, *) {
             do {
                 try SMAppService.mainApp.register()
-                UserDefaults.standard.set(true, forKey: "launchAtLogin")
+                updateLaunchAtLoginMenuItem()
+                print("✅ Launch at login enabled")
             } catch {
-                print("Failed to enable launch at login: \(error)")
+                print("❌ Failed to enable launch at login: \(error)")
                 showLaunchAtLoginError(enable: true)
             }
         } else {
             UserDefaults.standard.set(true, forKey: "launchAtLogin")
+            updateLaunchAtLoginMenuItem()
             showLaunchAtLoginLegacyMessage()
         }
     }
@@ -287,14 +311,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if #available(macOS 13.0, *) {
             do {
                 try SMAppService.mainApp.unregister()
-                UserDefaults.standard.set(false, forKey: "launchAtLogin")
+                updateLaunchAtLoginMenuItem()
+                print("✅ Launch at login disabled")
             } catch {
-                print("Failed to disable launch at login: \(error)")
+                print("❌ Failed to disable launch at login: \(error)")
                 showLaunchAtLoginError(enable: false)
             }
         } else {
             UserDefaults.standard.set(false, forKey: "launchAtLogin")
+            updateLaunchAtLoginMenuItem()
             showLaunchAtLoginLegacyMessage()
+        }
+    }
+    
+    func updateLaunchAtLoginMenuItem() {
+        if let menu = statusItem.menu,
+           let item = menu.items.first(where: { $0.title == "Launch at Login" }) {
+            item.state = isLaunchAtLoginEnabled() ? .on : .off
         }
     }
     
@@ -310,26 +343,88 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func showLaunchAtLoginLegacyMessage() {
         let alert = NSAlert()
         alert.messageText = "Manual Setup Required"
-        alert.informativeText = "Please add Eye Care to your Login Items manually in System Preferences > Users & Groups > Login Items."
+        alert.informativeText = "Please add lookaway to your Login Items manually in System Preferences > Users & Groups > Login Items."
         alert.alertStyle = .informational
         alert.addButton(withTitle: "OK")
         alert.runModal()
     }
     
-    @objc func quitApp() {
-        // CHANGE: Always show confirmation dialog
-        let alert = NSAlert()
-        alert.messageText = "Are you sure you want to quit?"
-        alert.informativeText = "Eye Care helps protect your eyes. Quitting will disable break reminders."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Cancel")
-        alert.addButton(withTitle: "Quit Anyway")
+    // NEW: Quit from settings with optional countdown
+    func quitFromSettings() {
+        let quitDelayEnabled = UserDefaults.standard.bool(forKey: "quitDelayEnabled")
+        let quitDelaySeconds = UserDefaults.standard.integer(forKey: "quitDelaySeconds")
         
-        let response = alert.runModal()
-        
-        if response == .alertSecondButtonReturn {
+        if quitDelayEnabled && quitDelaySeconds > 0 {
+            // Show countdown window
+            showQuitCountdown(seconds: quitDelaySeconds)
+        } else {
+            // Quit immediately
             NSApplication.shared.terminate(nil)
         }
+    }
+    
+    private func showQuitCountdown(seconds: Int) {
+        quitCountdown = seconds
+        
+        let quitView = QuitCountdownView(
+            countdown: quitCountdown,
+            onCancel: { [weak self] in
+                self?.cancelQuit()
+            }
+        )
+        
+        let hostingController = NSHostingController(rootView: quitView)
+        
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 200),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        
+        window.title = "Quitting lookaway"
+        window.contentViewController = hostingController
+        window.center()
+        window.level = .floating
+        window.isReleasedWhenClosed = false
+        window.makeKeyAndOrderFront(nil)
+        
+        quitWindow = window
+        
+        // Start countdown
+        quitTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
+            guard let self = self else {
+                timer.invalidate()
+                return
+            }
+            
+            self.quitCountdown -= 1
+            
+            // Update view
+            if let hostingController = self.quitWindow?.contentViewController as? NSHostingController<QuitCountdownView> {
+                hostingController.rootView = QuitCountdownView(
+                    countdown: self.quitCountdown,
+                    onCancel: { [weak self] in
+                        self?.cancelQuit()
+                    }
+                )
+            }
+            
+            if self.quitCountdown <= 0 {
+                timer.invalidate()
+                self.quitWindow?.close()
+                NSApplication.shared.terminate(nil)
+            }
+        }
+        
+        NSApp.activate(ignoringOtherApps: true)
+    }
+    
+    private func cancelQuit() {
+        quitTimer?.invalidate()
+        quitTimer = nil
+        quitWindow?.close()
+        quitWindow = nil
     }
     
     func showBreakOverlay() {
@@ -484,14 +579,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let alert = NSAlert()
         alert.messageText = "Credits"
         alert.informativeText = """
-        EyeCare App
+        lookaway - Eye Care App
         
         Created by: Kai Rozema
         
         If you have any good ideas for new features or an app, please contact me, I like to make apps and I would love to help you!
         
         © \(Calendar.current.component(.year, from: Date()))
-        App version: 2.1.2
+        App version: 3.0.0
         """
         alert.alertStyle = .informational
         alert.addButton(withTitle: "OK")
@@ -504,6 +599,44 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 NSWorkspace.shared.open(url)
             }
         }
+    }
+}
+
+// NEW: Quit countdown view
+struct QuitCountdownView: View {
+    let countdown: Int
+    let onCancel: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 50))
+                .foregroundColor(.orange)
+            
+            Text("Quitting lookaway in:")
+                .font(.headline)
+            
+            Text("\(countdown)")
+                .font(.system(size: 60, weight: .bold, design: .rounded))
+                .foregroundColor(.red)
+            
+            Text("Keep this window focused to continue")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            
+            Button(action: onCancel) {
+                Text("Cancel")
+                    .fontWeight(.semibold)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 30)
+        }
+        .padding()
     }
 }
 

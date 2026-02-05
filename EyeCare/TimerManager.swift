@@ -128,6 +128,9 @@ class TimerManager: ObservableObject {
             content.body = "Your eye break will start in \(minutesRemaining) minute\(minutesRemaining == 1 ? "" : "s")"
             content.sound = .default
             
+            // Note: System notifications cannot show live countdowns
+            // They are static once sent
+            
             let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
             UNUserNotificationCenter.current().add(request)
             
@@ -234,6 +237,9 @@ class TimerManager: ObservableObject {
         remainingFocusTime = 0
         onFocusUpdate?(0)
         
+        // Save the time when focus mode ended (for cooldown)
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "lastFocusModeEnd")
+        
         startWorkTimer()
         
         onSettingsChange?()
@@ -244,13 +250,12 @@ class TimerManager: ObservableObject {
         return remainingFocusTime
     }
     
-    // FIX: Add theme parameter
     func updateSettings(work: TimeInterval, breakTime: TimeInterval, focusTime: TimeInterval, message: String, theme: AppTheme) {
         workInterval = work
         breakDuration = breakTime
         focusDuration = focusTime
         breakMessage = message
-        currentTheme = theme  // ADD THIS LINE
+        currentTheme = theme
         
         saveSettings()
         
@@ -277,7 +282,7 @@ class TimerManager: ObservableObject {
         UserDefaults.standard.set(notificationTiming, forKey: "notificationTiming")
         UserDefaults.standard.set(breakMessage, forKey: "breakMessage")
         
-        // ADD: Save theme
+        // Save theme
         if let themeData = try? JSONEncoder().encode(currentTheme) {
             UserDefaults.standard.set(themeData, forKey: "currentTheme")
         }
@@ -311,7 +316,7 @@ class TimerManager: ObservableObject {
         
         breakMessage = UserDefaults.standard.string(forKey: "breakMessage") ?? "Time for a break!"
         
-        // ADD: Load theme
+        // Load theme
         if let themeData = UserDefaults.standard.data(forKey: "currentTheme"),
            let theme = try? JSONDecoder().decode(AppTheme.self, from: themeData) {
             currentTheme = theme

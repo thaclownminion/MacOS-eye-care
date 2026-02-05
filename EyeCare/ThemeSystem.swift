@@ -18,3 +18,4 @@ enum AppTheme: String, CaseIterable, Codable {
         }
     }
 }
+

@@ -9,7 +9,6 @@ struct SettingsView: View {
     @State private var focusMinutes: Double
     @State private var breakMessage: String
     @State private var selectedTheme: AppTheme
-    @State private var preventQuit: Bool = UserDefaults.standard.bool(forKey: "preventQuit")
     @State private var launchAtLogin: Bool = UserDefaults.standard.bool(forKey: "launchAtLogin")
     
     @State private var notificationsEnabled: Bool
@@ -27,7 +26,28 @@ struct SettingsView: View {
     @State private var saturdayEnabled: Bool
     @State private var sundayEnabled: Bool
     
+    // NEW: Focus cooldown settings
+    @State private var focusCooldownEnabled: Bool = UserDefaults.standard.bool(forKey: "focusCooldownEnabled")
+    @State private var focusCooldownMinutes: Double = UserDefaults.standard.double(forKey: "focusCooldownMinutes") == 0 ? 30 : UserDefaults.standard.double(forKey: "focusCooldownMinutes")
+    
+    // NEW: Quit delay settings
+    @State private var quitDelayEnabled: Bool = UserDefaults.standard.bool(forKey: "quitDelayEnabled")
+    @State private var quitDelaySeconds: Double = UserDefaults.standard.double(forKey: "quitDelaySeconds") == 0 ? 10 : UserDefaults.standard.double(forKey: "quitDelaySeconds")
+    
+    // NEW: Donation link
+    @State private var donationLink: String = UserDefaults.standard.string(forKey: "donationLink") ?? ""
+    
+    @State private var selectedTab: SettingsTab = .general
+    
     let defaultBreakMessage = "Time for a break!"
+    
+    enum SettingsTab: String, CaseIterable {
+        case general = "General"
+        case timers = "Timers"
+        case notifications = "Notifications"
+        case schedule = "Schedule"
+        case advanced = "Advanced"
+    }
     
     init(timerManager: TimerManager, appDelegate: AppDelegate?) {
         self.timerManager = timerManager
@@ -55,194 +75,144 @@ struct SettingsView: View {
     }
     
     var body: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                VStack(spacing: 8) {
-                    Image(systemName: "eye.fill")
-                        .font(.system(size: 50))
-                        .foregroundColor(.blue)
-                    
-                    Text("Eye Care Settings")
-                        .font(.title2)
-                        .fontWeight(.semibold)
+        VStack(spacing: 0) {
+            // Header
+            VStack(spacing: 8) {
+                Image(systemName: "eye.fill")
+                    .font(.system(size: 40))
+                    .foregroundColor(.cyan)
+                
+                Text("lookaway")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                
+                Text("Settings")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.top, 20)
+            .padding(.bottom, 10)
+            
+            Divider()
+            
+            // Tab selector
+            Picker("", selection: $selectedTab) {
+                ForEach(SettingsTab.allCases, id: \.self) { tab in
+                    Text(tab.rawValue).tag(tab)
                 }
-                .padding(.top, 20)
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 10)
+            
+            // Tab content
+            ScrollView {
+                VStack(spacing: 0) {
+                    switch selectedTab {
+                    case .general:
+                        generalTab
+                    case .timers:
+                        timersTab
+                    case .notifications:
+                        notificationsTab
+                    case .schedule:
+                        scheduleTab
+                    case .advanced:
+                        advancedTab
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 20)
+            }
+            
+            Divider()
+            
+            // Action buttons
+            HStack(spacing: 12) {
+                // Donation button (if link is set)
+                if !donationLink.isEmpty {
+                    Button(action: openDonationLink) {
+                        HStack {
+                            Image(systemName: "heart.fill")
+                            Text("Donate")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.pink)
+                        .foregroundColor(.white)
+                        .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+                }
                 
-                Divider()
-                
-                VStack(alignment: .leading, spacing: 20) {
-                    // Theme Selection
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Appearance Theme")
-                            .font(.headline)
-                        
-                        Picker("Theme", selection: $selectedTheme) {
-                            ForEach(AppTheme.allCases, id: \.self) { theme in
-                                Text(theme.rawValue).tag(theme)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .onChange(of: selectedTheme) { oldValue, newValue in
-                            // Apply theme immediately
-                            applyThemeImmediately(newValue)
-                        }
-                        
-                        Text("Changes the appearance of the settings window only")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                Button(action: saveSettings) {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                        Text("Save Settings")
                     }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(8)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 15)
+        }
+        .frame(width: 450, height: 750)
+    }
+    
+    // MARK: - General Tab
+    var generalTab: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            SettingGroup(title: "Appearance") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Theme")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
                     
-                    Divider()
-                    
-                    // Break Message
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Break Message")
-                            .font(.headline)
-                        
-                        TextField("Enter custom message", text: $breakMessage)
-                            .textFieldStyle(.roundedBorder)
-                        
-                        Button(action: resetToDefaultMessage) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "arrow.counterclockwise")
-                                    .font(.system(size: 11))
-                                Text("Reset to default")
-                                    .font(.system(size: 12))
-                            }
-                            .foregroundColor(.blue)
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.top, 2)
-                        
-                        Text("This message appears during breaks")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Divider()
-                    
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Work Interval")
-                            .font(.headline)
-                        Text("\(Int(workMinutes)) minutes")
-                            .foregroundColor(.secondary)
-                        Slider(value: $workMinutes, in: 1...120, step: 1)
-                    }
-                    
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Break Duration")
-                            .font(.headline)
-                        Text("\(Int(breakSeconds)) seconds")
-                            .foregroundColor(.secondary)
-                        Slider(value: $breakSeconds, in: 10...300, step: 5)
-                    }
-                    
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Focus Mode Duration")
-                            .font(.headline)
-                        Text("\(Int(focusMinutes)) minutes")
-                            .foregroundColor(.secondary)
-                        Slider(value: $focusMinutes, in: 15...180, step: 5)
-                        Text("No breaks during focus mode")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Divider()
-
-                    // Break Notifications
-                    VStack(alignment: .leading, spacing: 15) {
-                        Toggle("Enable Break Notifications", isOn: $notificationsEnabled)
-                            .font(.headline)
-                        
-                        if notificationsEnabled {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text("Notification Type")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                                
-                                Picker("", selection: $useSystemNotifications) {
-                                    Text("System Notifications").tag(true)
-                                    Text("In-App Indicator").tag(false)
-                                }
-                                .pickerStyle(.segmented)
-                                
-                                Text("Notify me before break:")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                                    .padding(.top, 5)
-                                
-                                Toggle("5 minutes before", isOn: $notification5min)
-                                Toggle("2 minutes before", isOn: $notification2min)
-                                Toggle("1 minute before", isOn: $notification1min)
-                                
-                                Text(useSystemNotifications ?
-                                    "System notifications appear in Notification Center" :
-                                    "In-app indicator shows at top-right of screen")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                    .padding(.top, 5)
-                            }
-                            .padding(.leading, 10)
+                    Picker("", selection: $selectedTheme) {
+                        ForEach(AppTheme.allCases, id: \.self) { theme in
+                            Text(theme.rawValue).tag(theme)
                         }
                     }
-                    
-                    Divider()
-                    
-                    // Weekly Schedule
-                    VStack(alignment: .leading, spacing: 15) {
-                        Toggle("Enable Weekly Schedule", isOn: $scheduleEnabled)
-                            .font(.headline)
-                            .onChange(of: scheduleEnabled) { oldValue, newValue in
-                                timerManager.scheduleEnabled = newValue
-                                timerManager.updateScheduleSettings()
-                            }
-                        
-                        if scheduleEnabled {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Active Days")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                                
-                                Toggle("Monday", isOn: $mondayEnabled)
-                                    .onChange(of: mondayEnabled) { oldValue, newValue in
-                                        timerManager.mondayEnabled = newValue
-                                    }
-                                Toggle("Tuesday", isOn: $tuesdayEnabled)
-                                    .onChange(of: tuesdayEnabled) { oldValue, newValue in
-                                        timerManager.tuesdayEnabled = newValue
-                                    }
-                                Toggle("Wednesday", isOn: $wednesdayEnabled)
-                                    .onChange(of: wednesdayEnabled) { oldValue, newValue in
-                                        timerManager.wednesdayEnabled = newValue
-                                    }
-                                Toggle("Thursday", isOn: $thursdayEnabled)
-                                    .onChange(of: thursdayEnabled) { oldValue, newValue in
-                                        timerManager.thursdayEnabled = newValue
-                                    }
-                                Toggle("Friday", isOn: $fridayEnabled)
-                                    .onChange(of: fridayEnabled) { oldValue, newValue in
-                                        timerManager.fridayEnabled = newValue
-                                    }
-                                Toggle("Saturday", isOn: $saturdayEnabled)
-                                    .onChange(of: saturdayEnabled) { oldValue, newValue in
-                                        timerManager.saturdayEnabled = newValue
-                                    }
-                                Toggle("Sunday", isOn: $sundayEnabled)
-                                    .onChange(of: sundayEnabled) { oldValue, newValue in
-                                        timerManager.sundayEnabled = newValue
-                                    }
-                                
-                                Text("Breaks only happen on selected days")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            .padding(.leading, 10)
-                        }
+                    .pickerStyle(.segmented)
+                    .onChange(of: selectedTheme) { oldValue, newValue in
+                        applyThemeImmediately(newValue)
                     }
                     
-                    Divider()
+                    Text("Applies to settings window only")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            SettingGroup(title: "Break Message") {
+                VStack(alignment: .leading, spacing: 8) {
+                    TextField("Enter custom message", text: $breakMessage)
+                        .textFieldStyle(.roundedBorder)
                     
+                    Button(action: resetToDefaultMessage) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.counterclockwise")
+                                .font(.system(size: 11))
+                            Text("Reset to default")
+                                .font(.system(size: 12))
+                        }
+                        .foregroundColor(.blue)
+                    }
+                    .buttonStyle(.plain)
+                    
+                    Text("Displayed during break overlays")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            SettingGroup(title: "Startup") {
+                VStack(alignment: .leading, spacing: 8) {
                     Toggle("Launch at Login", isOn: $launchAtLogin)
                         .onChange(of: launchAtLogin) { oldValue, newValue in
                             if newValue {
@@ -252,52 +222,273 @@ struct SettingsView: View {
                             }
                         }
                     
-                    Text("Start Eye Care automatically when you log in")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    
-                    Divider()
-                    
-                    Toggle("confirm before quitting the app", isOn: $preventQuit)
-                        .onChange(of: preventQuit) { oldValue, newValue in
-                            UserDefaults.standard.set(newValue, forKey: "preventQuit")
-                            timerManager.onSettingsChange?()
-                        }
-                    
-                    Text("When enabled, quitting requires confirmation")
+                    Text("Start lookaway automatically when you log in")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-                .padding(.horizontal, 30)
-                
-                Button(action: saveSettings) {
-                    Text("Save Settings")
-                        .fontWeight(.semibold)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue)
-                        .foregroundColor(.white)
-                        .cornerRadius(10)
+            }
+            
+            SettingGroup(title: "Support") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Donation Link")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    
+                    TextField("Enter your donation URL", text: $donationLink)
+                        .textFieldStyle(.roundedBorder)
+                    
+                    Text("Add your donation link to show a donate button")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 30)
-                .padding(.bottom, 20)
             }
         }
-        .frame(width: 400, height: 700)
+        .padding(.top, 10)
     }
     
+    // MARK: - Timers Tab
+    var timersTab: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            SettingGroup(title: "Work Interval") {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("\(Int(workMinutes)) minutes")
+                            .font(.headline)
+                        Spacer()
+                    }
+                    
+                    Slider(value: $workMinutes, in: 1...120, step: 1)
+                    
+                    Text("Time between breaks")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            SettingGroup(title: "Break Duration") {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("\(Int(breakSeconds)) seconds")
+                            .font(.headline)
+                        Spacer()
+                    }
+                    
+                    Slider(value: $breakSeconds, in: 10...300, step: 5)
+                    
+                    Text("How long each break lasts")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            SettingGroup(title: "Focus Mode Duration") {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("\(Int(focusMinutes)) minutes")
+                            .font(.headline)
+                        Spacer()
+                    }
+                    
+                    Slider(value: $focusMinutes, in: 15...180, step: 5)
+                    
+                    Text("No breaks during focus mode")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+        .padding(.top, 10)
+    }
+    
+    // MARK: - Notifications Tab
+    var notificationsTab: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            SettingGroup(title: "Break Notifications") {
+                VStack(alignment: .leading, spacing: 12) {
+                    Toggle("Enable Notifications", isOn: $notificationsEnabled)
+                        .fontWeight(.medium)
+                    
+                    if notificationsEnabled {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Notification Type")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            
+                            Picker("", selection: $useSystemNotifications) {
+                                Text("System Notifications").tag(true)
+                                Text("In-App Indicator").tag(false)
+                            }
+                            .pickerStyle(.segmented)
+                            
+                            Divider()
+                            
+                            Text("Notify me before break:")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            
+                            Toggle("5 minutes before", isOn: $notification5min)
+                            Toggle("2 minutes before", isOn: $notification2min)
+                            Toggle("1 minute before", isOn: $notification1min)
+                            
+                            Text(useSystemNotifications ?
+                                "System notifications appear in Notification Center" :
+                                "In-app indicator shows at top-right of screen with live countdown")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(.top, 5)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.top, 10)
+    }
+    
+    // MARK: - Schedule Tab
+    var scheduleTab: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            SettingGroup(title: "Weekly Schedule") {
+                VStack(alignment: .leading, spacing: 12) {
+                    Toggle("Enable Schedule", isOn: $scheduleEnabled)
+                        .fontWeight(.medium)
+                        .onChange(of: scheduleEnabled) { oldValue, newValue in
+                            timerManager.scheduleEnabled = newValue
+                            timerManager.updateScheduleSettings()
+                        }
+                    
+                    if scheduleEnabled {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Active Days")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            
+                            Toggle("Monday", isOn: $mondayEnabled)
+                                .onChange(of: mondayEnabled) { oldValue, newValue in
+                                    timerManager.mondayEnabled = newValue
+                                }
+                            Toggle("Tuesday", isOn: $tuesdayEnabled)
+                                .onChange(of: tuesdayEnabled) { oldValue, newValue in
+                                    timerManager.tuesdayEnabled = newValue
+                                }
+                            Toggle("Wednesday", isOn: $wednesdayEnabled)
+                                .onChange(of: wednesdayEnabled) { oldValue, newValue in
+                                    timerManager.wednesdayEnabled = newValue
+                                }
+                            Toggle("Thursday", isOn: $thursdayEnabled)
+                                .onChange(of: thursdayEnabled) { oldValue, newValue in
+                                    timerManager.thursdayEnabled = newValue
+                                }
+                            Toggle("Friday", isOn: $fridayEnabled)
+                                .onChange(of: fridayEnabled) { oldValue, newValue in
+                                    timerManager.fridayEnabled = newValue
+                                }
+                            Toggle("Saturday", isOn: $saturdayEnabled)
+                                .onChange(of: saturdayEnabled) { oldValue, newValue in
+                                    timerManager.saturdayEnabled = newValue
+                                }
+                            Toggle("Sunday", isOn: $sundayEnabled)
+                                .onChange(of: sundayEnabled) { oldValue, newValue in
+                                    timerManager.sundayEnabled = newValue
+                                }
+                            
+                            Text("Breaks only happen on selected days")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.top, 10)
+    }
+    
+    // MARK: - Advanced Tab
+    var advancedTab: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            SettingGroup(title: "Focus Mode Cooldown") {
+                VStack(alignment: .leading, spacing: 12) {
+                    Toggle("Enable Cooldown", isOn: $focusCooldownEnabled)
+                        .fontWeight(.medium)
+                    
+                    if focusCooldownEnabled {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("\(Int(focusCooldownMinutes)) minutes")
+                                    .font(.headline)
+                                Spacer()
+                            }
+                            
+                            Slider(value: $focusCooldownMinutes, in: 5...120, step: 5)
+                            
+                            Text("Wait time before enabling Focus Mode again")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+            
+            SettingGroup(title: "Quit Protection") {
+                VStack(alignment: .leading, spacing: 12) {
+                    Toggle("Enable Quit Delay", isOn: $quitDelayEnabled)
+                        .fontWeight(.medium)
+                    
+                    if quitDelayEnabled {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("\(Int(quitDelaySeconds)) seconds")
+                                    .font(.headline)
+                                Spacer()
+                            }
+                            
+                            Slider(value: $quitDelaySeconds, in: 5...60, step: 5)
+                            
+                            Text("Countdown before quitting (window must stay focused)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    
+                    Text("Note: You can only quit from Settings, not the menu bar")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                        .padding(.top, 5)
+                }
+            }
+            
+            SettingGroup(title: "Danger Zone") {
+                VStack(alignment: .leading, spacing: 12) {
+                    Button(action: { appDelegate?.quitFromSettings() }) {
+                        HStack {
+                            Image(systemName: "xmark.circle.fill")
+                            Text("Quit lookaway")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Color.red)
+                        .foregroundColor(.white)
+                        .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+                    
+                    Text("Only way to quit the application")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+        .padding(.top, 10)
+    }
+    
+    // MARK: - Helper Functions
     func resetToDefaultMessage() {
         breakMessage = defaultBreakMessage
     }
     
-    // ADD: Apply theme immediately without saving
     func applyThemeImmediately(_ theme: AppTheme) {
-        // Update timer manager theme
         timerManager.currentTheme = theme
         
-        // Apply to settings window
-        if let window = NSApp.windows.first(where: { $0.title == "Eye Care Settings" }) {
+        if let window = NSApp.windows.first(where: { $0.title == "lookaway Settings" }) {
             switch theme {
             case .system:
                 window.appearance = nil
@@ -307,6 +498,20 @@ struct SettingsView: View {
                 window.appearance = NSAppearance(named: .darkAqua)
             }
         }
+    }
+    
+    func openDonationLink() {
+        guard let url = URL(string: donationLink) else {
+            let alert = NSAlert()
+            alert.messageText = "Invalid URL"
+            alert.informativeText = "The donation link is not a valid URL."
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            return
+        }
+        
+        NSWorkspace.shared.open(url)
     }
     
     func saveSettings() {
@@ -333,6 +538,17 @@ struct SettingsView: View {
         
         manager.updateScheduleSettings()
         
+        // Save focus cooldown settings
+        UserDefaults.standard.set(focusCooldownEnabled, forKey: "focusCooldownEnabled")
+        UserDefaults.standard.set(focusCooldownMinutes, forKey: "focusCooldownMinutes")
+        
+        // Save quit delay settings
+        UserDefaults.standard.set(quitDelayEnabled, forKey: "quitDelayEnabled")
+        UserDefaults.standard.set(Int(quitDelaySeconds), forKey: "quitDelaySeconds")
+        
+        // Save donation link
+        UserDefaults.standard.set(donationLink, forKey: "donationLink")
+        
         let alert = NSAlert()
         alert.messageText = "Settings Saved ✅"
         alert.informativeText = "Your settings have been saved successfully."
@@ -340,8 +556,32 @@ struct SettingsView: View {
         alert.addButton(withTitle: "OK")
         alert.runModal()
         
-        if let window = NSApp.windows.first(where: { $0.title == "Eye Care Settings" }) {
+        if let window = NSApp.windows.first(where: { $0.title == "lookaway Settings" }) {
             window.close()
         }
+    }
+}
+
+// MARK: - Setting Group Component
+struct SettingGroup<Content: View>: View {
+    let title: String
+    let content: Content
+    
+    init(title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.headline)
+                .foregroundColor(.primary)
+            
+            content
+        }
+        .padding()
+        .background(Color.secondary.opacity(0.1))
+        .cornerRadius(10)
     }
 }
