@@ -32,7 +32,7 @@ You can find the app on the top of your screen (in the menu bar).
 # Credits
 Creator: Kai Rozema
 
-For sugestions and bugs: https://github.com/thaclownminion/MacOS-eye-care/issues
+For sugestions and bugs: https://github.com/thaclownminion/MacOS-Descreen-app/issues
 
 Contact: thaclownminion@users.noreply.github.com
 
