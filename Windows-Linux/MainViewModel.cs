@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Avalonia.Threading;
@@ -8,15 +9,11 @@ namespace Descreen;
 public partial class MainViewModel : ObservableObject
 {
     private readonly TimerManager _timer;
+    private MainWindow? _window;
 
-    [ObservableProperty] private string _timeLeftText   = "Calculating...";
+    [ObservableProperty] private string _timeLeftText    = "Calculating...";
     [ObservableProperty] private string _focusStatusText = "Focus Mode: Off";
     [ObservableProperty] private string _focusButtonText = "Enable Focus Mode";
-    [ObservableProperty] private bool   _showWarning    = false;
-    [ObservableProperty] private string _warningTitle   = "";
-    [ObservableProperty] private string _warningSubtitle = "";
-    [ObservableProperty] private bool   _showCountdown  = false;
-    [ObservableProperty] private string _countdownText  = "";
 
     public MainViewModel(TimerManager timer)
     {
@@ -38,34 +35,20 @@ public partial class MainViewModel : ObservableObject
         _timer.OnSettingsChange   = () => UI(UpdateFocusButton);
         _timer.OnTimerStateChange = () => UI(UpdateFocusButton);
 
+        // Notifications go to OS — handled by Notifier, not in-app
         _timer.OnBreakWarning = mins => UI(() =>
         {
-            // Fire a real OS notification — appears in notification centre / top bar
             string title = mins <= 1 ? "Break Starting Soon!" : "Break Coming Soon";
             string body  = $"Your eye break starts in {mins} minute{(mins == 1 ? "" : "s")}";
             Notifier.Send(title, body);
         });
-
-        _timer.OnBreakCountdown = secs => UI(() =>
-        {
-            // Live countdown stays in-app since OS notifications can't update in real time
-            WarningTitle    = "Break Starting Soon!";
-            WarningSubtitle = "Get ready to rest your eyes";
-            CountdownText   = secs.ToString();
-            ShowCountdown   = true;
-            ShowWarning     = true;
-
-            if (secs == 0)
-                DispatcherTimer.RunOnce(() => ShowWarning = false, TimeSpan.FromMilliseconds(500));
-        });
-
-        _timer.OnBreakEnd = () => UI(() => ShowWarning = false);
     }
 
-    private void UpdateFocusButton()
-    {
+    // Called by App so the ViewModel can show/hide the window
+    public void SetWindow(MainWindow window) => _window = window;
+
+    private void UpdateFocusButton() =>
         FocusButtonText = _timer.IsFocusModeActive ? "Disable Focus Mode" : "Enable Focus Mode";
-    }
 
     [RelayCommand]
     private void ToggleFocusMode()
@@ -82,12 +65,8 @@ public partial class MainViewModel : ObservableObject
                 if (elapsed < cooldown)
                 {
                     double rem = cooldown - elapsed;
-                    // Show cooldown message in warning banner
-                    WarningTitle    = "Focus Mode Cooldown";
-                    WarningSubtitle = $"Please wait {(int)rem / 60}:{(int)rem % 60:D2} before enabling again";
-                    ShowCountdown   = false;
-                    ShowWarning     = true;
-                    DispatcherTimer.RunOnce(() => ShowWarning = false, TimeSpan.FromSeconds(4));
+                    Notifier.Send("Focus Mode Cooldown",
+                        $"Please wait {(int)rem / 60}:{(int)rem % 60:D2} before enabling again.");
                     return;
                 }
             }
@@ -99,14 +78,28 @@ public partial class MainViewModel : ObservableObject
     private void TakeBreakNow() => _timer.TriggerBreakNow();
 
     [RelayCommand]
+    private void HideWindow() => _window?.Hide();
+
+    [RelayCommand]
     private void OpenSettings()
     {
         var win = new SettingsWindow(_timer);
         win.Show();
     }
 
+    [RelayCommand]
+    private void OpenFeedback() =>
+        OpenUrl("https://github.com/thaclownminion/Descreen-app_Windows-Linux-MacOS/issues");
+
+    [RelayCommand]
+    private void OpenGithub() =>
+        OpenUrl("https://github.com/thaclownminion/Descreen-app_Windows-Linux-MacOS");
+
     public TimerManager Timer => _timer;
 
     private static void UI(Action a) =>
         Dispatcher.UIThread.Post(a, DispatcherPriority.Normal);
+
+    private static void OpenUrl(string url) =>
+        Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
 }

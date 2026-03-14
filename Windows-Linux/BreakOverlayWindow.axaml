@@ -7,33 +7,35 @@
         SystemDecorations="None"
         Topmost="True"
         ShowInTaskbar="False"
-        CanResize="False">
+        CanResize="False"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="NoChrome"
+        ExtendClientAreaTitleBarHeightHint="-1">
 
-    <Grid>
+    <Grid HorizontalAlignment="Stretch"
+          VerticalAlignment="Stretch">
+
         <StackPanel VerticalAlignment="Center"
                     HorizontalAlignment="Center"
                     Spacing="24">
 
-            <!-- Eye icon -->
             <TextBlock Text="👁"
                        FontSize="90"
                        HorizontalAlignment="Center"/>
 
-            <!-- Break message -->
             <TextBlock x:Name="MessageLabel"
                        FontSize="46" FontWeight="Bold"
                        Foreground="White"
                        HorizontalAlignment="Center"
                        TextAlignment="Center"
-                       MaxWidth="700"/>
+                       MaxWidth="700"
+                       TextWrapping="Wrap"/>
 
-            <!-- Sub text -->
             <TextBlock Text="Look away from your screen"
                        FontSize="22"
                        Foreground="#aaaaaa"
                        HorizontalAlignment="Center"/>
 
-            <!-- Progress ring + countdown -->
             <Grid Width="220" Height="220"
                   HorizontalAlignment="Center"
                   Margin="0,20,0,0">

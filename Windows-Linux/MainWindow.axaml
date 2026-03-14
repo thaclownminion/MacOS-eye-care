@@ -4,8 +4,8 @@
         x:Class="Descreen.MainWindow"
         x:DataType="local:MainViewModel"
         Title="Descreen"
-        Width="420" Height="320"
-        MinWidth="380" MinHeight="280"
+        Width="420" Height="300"
+        MinWidth="420" MinHeight="300"
         CanResize="False"
         Background="#1a1a1a"
         FontFamily="Segoe UI, SF Pro Display, Ubuntu, sans-serif">
@@ -37,9 +37,6 @@
                     <TextBlock Text="{Binding TimeLeftText}"
                                FontSize="12" Foreground="#aaaaaa"/>
                 </StackPanel>
-                <StackPanel.Styles>
-                    <Style Selector="TextBlock"/>
-                </StackPanel.Styles>
             </StackPanel>
         </Border>
 
@@ -52,29 +49,8 @@
                            Foreground="#aaaaaa" FontSize="13"/>
             </Border>
 
-            <!-- Warning banner -->
-            <Border Background="#1a1a2e" CornerRadius="8" Padding="14,10"
-                    BorderBrush="#3a3aff" BorderThickness="1"
-                    IsVisible="{Binding ShowWarning}">
-                <Grid ColumnDefinitions="*,Auto">
-                    <StackPanel>
-                        <TextBlock Text="{Binding WarningTitle}"
-                                   FontWeight="Bold" Foreground="White" FontSize="13"/>
-                        <TextBlock Text="{Binding WarningSubtitle}"
-                                   Foreground="#aaaaaa" FontSize="12"/>
-                    </StackPanel>
-                    <TextBlock Grid.Column="1"
-                               Text="{Binding CountdownText}"
-                               IsVisible="{Binding ShowCountdown}"
-                               FontSize="28" FontWeight="Bold"
-                               Foreground="Orange"
-                               VerticalAlignment="Center"
-                               Margin="10,0,0,0"/>
-                </Grid>
-            </Border>
-
-            <!-- Buttons -->
-            <Grid ColumnDefinitions="*,*" HorizontalAlignment="Stretch">
+            <!-- Buttons row 1 -->
+            <Grid ColumnDefinitions="*,*">
                 <Button Grid.Column="0"
                         Command="{Binding ToggleFocusModeCommand}"
                         Content="{Binding FocusButtonText}"
@@ -91,15 +67,39 @@
                         Margin="5,0,0,0"/>
             </Grid>
 
+            <!-- Buttons row 2 -->
+            <Grid ColumnDefinitions="*,*">
+                <Button Grid.Column="0"
+                        Command="{Binding OpenFeedbackCommand}"
+                        Content="💬  Feedback"
+                        Background="#3a2a4a"
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Center"
+                        Margin="0,0,5,0"/>
+                <Button Grid.Column="1"
+                        Command="{Binding OpenGithubCommand}"
+                        Content="🐙  GitHub"
+                        Background="#2a2a3a"
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Center"
+                        Margin="5,0,0,0"/>
+            </Grid>
+
         </StackPanel>
 
         <!-- Footer -->
         <Border Grid.Row="2" Background="#111111" Padding="20,12">
-            <Grid ColumnDefinitions="*,Auto">
+            <Grid ColumnDefinitions="*,Auto,Auto">
                 <TextBlock Text="© Kai Rozema"
                            Foreground="#555555" FontSize="11"
                            VerticalAlignment="Center"/>
                 <Button Grid.Column="1"
+                        Command="{Binding HideWindowCommand}"
+                        Content="—  Hide"
+                        Background="#2a2a2a"
+                        FontSize="12"
+                        Margin="0,0,8,0"/>
+                <Button Grid.Column="2"
                         Command="{Binding OpenSettingsCommand}"
                         Content="⚙  Settings"
                         Background="#2a2a2a"

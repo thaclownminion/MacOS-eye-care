@@ -13,6 +13,7 @@ public partial class BreakOverlayWindow : Window
     private readonly DispatcherTimer _uiTimer;
     private Arc? _progressArc;
     private double _totalDuration;
+    private bool _forceClosing = false;
 
     public BreakOverlayWindow(TimerManager timer)
     {
@@ -22,25 +23,28 @@ public partial class BreakOverlayWindow : Window
 
         MessageLabel.Text = timer.BreakMessage;
 
+        // Ensure true fullscreen covering entire screen including taskbar
+        this.WindowState = WindowState.FullScreen;
+
         BuildRing();
 
         _uiTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
         _uiTimer.Tick += Tick;
         _uiTimer.Start();
+    }
 
-        // Close overlay when break ends
-        timer.OnBreakEnd = () => Dispatcher.UIThread.Post(() =>
-        {
-            _uiTimer.Stop();
-            Close();
-        });
+    // Called by App.axaml.cs when the break ends
+    public void ForceClose()
+    {
+        _forceClosing = true;
+        _uiTimer.Stop();
+        Close();
     }
 
     private void BuildRing()
     {
         const double cx = 110, cy = 110, r = 90, stroke = 12;
 
-        // Track circle
         var track = new Ellipse
         {
             Width = r * 2, Height = r * 2,
@@ -51,7 +55,6 @@ public partial class BreakOverlayWindow : Window
         Canvas.SetTop(track,  cy - r);
         RingCanvas.Children.Add(track);
 
-        // Progress arc (Avalonia Arc: StartAngle=-90, SweepAngle=360 = full circle)
         _progressArc = new Arc
         {
             Width = r * 2, Height = r * 2,
@@ -74,14 +77,19 @@ public partial class BreakOverlayWindow : Window
         if (_progressArc != null && _totalDuration > 0)
             _progressArc.SweepAngle = 360f * (float)(remaining / _totalDuration);
 
-        // Glow tint when nearly done
         if (_progressArc != null && remaining <= 5)
             _progressArc.Stroke = new SolidColorBrush(Color.FromArgb(200, 0, 230, 230));
     }
 
-    protected override void OnClosed(EventArgs e)
+    // Block Alt+F4 — the overlay cannot be dismissed by the user
+    protected override void OnClosing(WindowClosingEventArgs e)
     {
+        if (!_forceClosing)
+        {
+            e.Cancel = true;
+            return;
+        }
         _uiTimer.Stop();
-        base.OnClosed(e);
+        base.OnClosing(e);
     }
 }
