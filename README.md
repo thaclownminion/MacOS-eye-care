@@ -1,23 +1,25 @@
-# MacOS eye care app
+# Descreen app
 This is an app that is meant to make you look away from your screen so your eyes live a little longer!
----
+# MacOS Descreen app instructions
+
 # How to download
 To download this app just download the .zip file from the newest release and unzip it by double clicking on the .zip file. 
-After you unzipped the file double click the "eyecare.app" you should get a pop-up that says thay you have to move the app to the trash. 
+After you unzipped the file double click the "Descreen.app" you should get a pop-up that says thay you have to move the app to the trash. 
 To still be able to run it go to:
 
 **Settings -> Privacy & security** and scroll all the way down and click the "open anyways" button, then it should open the app. 
 
 Releases: https://github.com/thaclownminion/MacOS-Descreen-app/releases
 
-## Disclaimer
-I do not yet have a windows nor linux version and I'm working on it at the moment. 
-
 ## Plus
 This app works on both intel and M/ARM chip based macbooks. 
 
 ## Where to find the app
 You can find the app on the top of your screen (in the menu bar). 
+
+# Windows Descreen app instructions
+
+
 
 # Features
 - Focus time: You can set a focus time and in that time you won't be blocked. For example in a meeting. you can change your time in the settings. 
